@@ -22,32 +22,80 @@ import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.jbariel.ex.processor.FileProcessor;
+import com.jbariel.ex.processor.JsonProcessor;
+import com.jbariel.ex.processor.TxtProcessor;
+import com.jbariel.ex.processor.XmlProcessor;
+import com.jbariel.ex.queue.QueueManager;
+
 public class Entry {
 
 	public enum ExitStatus {
-		NORMAL, HELP_SHOWN, UNKNOWN, FILE_NOT_FOUND, FILE_NOT_CLOSED_CORRECTLY,
+		NORMAL, HELP_SHOWN, UNKNOWN, FILE_NOT_FOUND, UNKNONW_DATA_TYPE, NO_DATA_TYPE_PROCESSOR_FOUND,
+		FILE_NOT_CLOSED_CORRECTLY, FILE_READ_FAILURE,
 	}
 
-	private static Logger log = LoggerFactory.getLogger(Entry.class);
+	public enum DataType {
+		XML, JSON, TXT,
+	}
+
+	private static final Logger log = LoggerFactory.getLogger(Entry.class);
 
 	private static EntryManager mgr = EntryManager.instance();
 
-	public static void main(String[] args) {
+	public static void main(final String[] args) {
 		mgr.readArgs(args);
 
 		// ACTUALLY DO STUFF
+		FileProcessor processor = null;
+		switch (mgr.getDataType()) {
+		case XML:
+			processor = new XmlProcessor();
+			break;
+		case JSON:
+			processor = new JsonProcessor();
+			break;
+		case TXT:
+			processor = new TxtProcessor();
+			break;
+		default:
+			log.error("Unable to process type '" + mgr.getDataType() + "' as there is no processor setup for it!");
+			exit(ExitStatus.NO_DATA_TYPE_PROCESSOR_FOUND);
+			break;
+		}
 
-		mgr.closeFileIfOpened();
+		QueueManager queueManager = new QueueManager();
+
+		processor.setQueueManager(queueManager);
+
+		processor.process(mgr.getFile());
+
+		while (queueManager.hasQueuedItems()) {
+			queueManager.processQueue();
+			try {
+				Thread.sleep(1000, 0);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+
+		log.info("Completed queue.  There were '" + queueManager.getFailedItems().size() + "' failed items");
+
 		exit(ExitStatus.NORMAL);
 	}
 
-	public static void exit(ExitStatus status) {
-		System.exit((status == null) ? ExitStatus.UNKNOWN.ordinal() : status.ordinal());
+	public static void exit(final ExitStatus status) {
+		mgr.closeFileIfOpened();
+		int statusInt = (status == null) ? ExitStatus.UNKNOWN.ordinal() : status.ordinal();
+		log.info("Exiting with status: '" + status.name() + " (" + statusInt + ")'");
+		System.exit(statusInt);
 	}
 
 	public static BufferedReader getFileToParse() {
@@ -71,11 +119,13 @@ public class Entry {
 
 		private BufferedReader file;
 
+		private DataType datatype;
+
 		private String getFilename() {
 			return this.filename;
 		}
 
-		private void setFilename(String filename) {
+		private void setFilename(final String filename) {
 			this.filename = filename;
 			tryToLoadFile();
 		}
@@ -95,7 +145,47 @@ public class Entry {
 			log.info("Successfully loaded file with filename: '" + getFilename() + "'");
 		}
 
-		private void readArgs(String[] args) {
+		protected DataType getDataType() {
+			return this.datatype;
+		}
+
+		private void setDataType(final String dataTypeString) {
+			switch (StringUtils.trimToEmpty(dataTypeString).toLowerCase()) {
+			case "xml":
+				setDataType(DataType.XML);
+				break;
+			case "json":
+				setDataType(DataType.JSON);
+				break;
+			case "txt":
+			case "text":
+				setDataType(DataType.TXT);
+				break;
+			default:
+				log.error("Unknown data type: '" + dataTypeString + "' (read as '"
+						+ StringUtils.trimToEmpty(dataTypeString).toLowerCase()
+						+ "') - Please check your input and try again!");
+				Entry.exit(ExitStatus.UNKNONW_DATA_TYPE);
+				break;
+
+			}
+		}
+
+		protected void setDataType(final DataType dataType) {
+			this.datatype = dataType;
+			log.info("Attmpting to process data of type: '" + getDataType() + "'");
+		}
+
+		private void tryToParseDataTypeFromFile() {
+			String[] fileParts = getFilename().split("\\.");
+			if (0 == fileParts.length) {
+				log.error("Cannot determine data type from filename '" + getFilename() + "'");
+				Entry.exit(ExitStatus.UNKNONW_DATA_TYPE);
+			}
+			setDataType(fileParts[fileParts.length - 1]);
+		}
+
+		private void readArgs(final String[] args) {
 			if (args.length == 0) {
 				printHelpAndExit();
 			}
@@ -109,6 +199,9 @@ public class Entry {
 				case "-f":
 					setFilename(tmpVal);
 					break;
+				case "-t":
+					setDataType(tmpVal);
+					break;
 				case "-?":
 				case "-H":
 				case "-h":
@@ -121,6 +214,10 @@ public class Entry {
 
 			} while (index < args.length);
 
+			if (null != getFile() && null == getDataType()) {
+				tryToParseDataTypeFromFile();
+			}
+
 		}
 
 		protected void closeFileIfOpened() {
@@ -131,6 +228,7 @@ public class Entry {
 				} catch (IOException e) {
 					log.error("Failed to close file: '" + getFilename() + "'!!!");
 					e.printStackTrace();
+					file = null;
 					Entry.exit(ExitStatus.FILE_NOT_CLOSED_CORRECTLY);
 				}
 			}
@@ -140,16 +238,27 @@ public class Entry {
 			printHelpAndExit(ExitStatus.HELP_SHOWN);
 		}
 
-		private void printHelpAndExit(ExitStatus status) {
+		private void printHelpAndExit(final ExitStatus status) {
 			System.out.println(
 					"\n===================================== HOW TO USE THIS JAR ====================================="
 							+ "\n\tThis jar can be called with switched arguments as follows:"
 							+ "\n\n\t\t -f <filename>   => sets the file to process"
-							+ "\n\t\t\t THIS FILE MUST BE RELATIVE TO THE CWD - NOT THE JAR FILE"
+							+ "\n\t\t\t THIS FILE MUST BE RELATIVE TO THE CWD - NOT THE JAR FILE" + "\n\n\t\t -t ["
+							+ String.join("|",
+									Arrays.asList(DataType.values()).stream().map(s -> s.name().toLowerCase())
+											.collect(Collectors.toList()))
+							+ "]   => format of data to parse"
+							+ "\n\t\t\t If no type is provided, the extension of the file will be used."
+							+ "\n\t\t\t If no type can be determined from the extension, jar will exit."
 							+ "\n\n\t\t -h | -H | -?    => prints this help and exits"
+							+ "\n\n\t=================== EXIT STATUS ==================="
+							+ "\n\tThis jar will exit with the following statuses, depending on the case:"
+							+ Arrays.asList(ExitStatus.values()).stream()
+									.map(s -> "\n\t\t" + s.ordinal() + " => " + s.name())
+									.collect(StringBuilder::new, StringBuilder::append, StringBuilder::append)
+									.toString()
 							+ "\n\n===============================================================================================\n\n");
 
-			closeFileIfOpened();
 			Entry.exit(status);
 		}
 
