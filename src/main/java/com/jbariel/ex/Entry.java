@@ -37,19 +37,42 @@ import com.jbariel.ex.queue.QueueManager;
 
 public class Entry {
 
+	/**
+	 * Holding place for different exit statuses
+	 * 
+	 * @see Entry#exit(ExitStatus)
+	 * @see EntryManager#printHelpAndExit()
+	 */
 	public enum ExitStatus {
 		NORMAL, HELP_SHOWN, UNKNOWN, FILE_NOT_FOUND, UNKNONW_DATA_TYPE, NO_DATA_TYPE_PROCESSOR_FOUND,
 		FILE_NOT_CLOSED_CORRECTLY, FILE_READ_FAILURE,
 	}
 
+	/**
+	 * All the supported types. Each will need it's own {@link FileProcessor}
+	 * 
+	 * @see EntryManager#printHelpAndExit()
+	 */
 	public enum DataType {
 		XML, JSON, TXT,
 	}
 
+	/**
+	 * Logger used for the {@link Entry} class
+	 */
 	private static final Logger log = LoggerFactory.getLogger(Entry.class);
 
+	/**
+	 * Singleon {@link EntryManager}
+	 */
 	private static EntryManager mgr = EntryManager.instance();
 
+	/**
+	 * Main entry point.
+	 * 
+	 * @param args
+	 * @see EntryManager#printHelpAndExit()
+	 */
 	public static void main(final String[] args) {
 		mgr.readArgs(args);
 
@@ -91,6 +114,11 @@ public class Entry {
 		exit(ExitStatus.NORMAL);
 	}
 
+	/**
+	 * system exit controller
+	 * 
+	 * @param status
+	 */
 	public static void exit(final ExitStatus status) {
 		mgr.closeFileIfOpened();
 		int statusInt = (status == null) ? ExitStatus.UNKNOWN.ordinal() : status.ordinal();
