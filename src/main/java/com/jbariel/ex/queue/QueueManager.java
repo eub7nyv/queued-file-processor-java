@@ -34,23 +34,52 @@ public class QueueManager {
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 
-	private final int CorePoolSize = 10;
+	public static final int defaultCorePoolSize = 4;
+
+	public static final int maximumCorePoolSize = 10;
 
 	private final ConcurrentLinkedQueue<QueueItem> queue;
 
-	private final ThreadPoolExecutor executor;
+	private ThreadPoolExecutor executor;
 
 	private final List<QueueItem> failedItems = new ArrayList<>();
 
+	private int corePoolSize;
+
 	public QueueManager() {
 		super();
+		corePoolSize = defaultCorePoolSize;
 		queue = new ConcurrentLinkedQueue<>();
-		executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(CorePoolSize);
+	}
+
+	private ThreadPoolExecutor executor() {
+		if (null == executor) {
+			executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(getCorePoolSize());
+		}
+		return executor;
+	}
+
+	public int getCorePoolSize() {
+		return this.corePoolSize;
+	}
+
+	private int getThreadCountInRange(int size) {
+		return (size <= 0) ? defaultCorePoolSize : ((size >= maximumCorePoolSize) ? maximumCorePoolSize : size);
+	}
+
+	public void setCorePoolSize(int size) {
+		this.corePoolSize = getThreadCountInRange(size);
+		log.debug("Using thread pool with size: '" + getCorePoolSize() + "' (was given size: '" + size + "')");
+	}
+
+	public QueueManager withCorePoolSize(int size) {
+		setCorePoolSize(size);
+		return this;
 	}
 
 	public void addToQueue(final QueueItem item) {
 		queue.add(item);
-		item.setFuture(executor.submit(item.getRunner()));
+		item.setFuture(executor().submit(item.getRunner()));
 	}
 
 	public boolean hasQueuedItems() {

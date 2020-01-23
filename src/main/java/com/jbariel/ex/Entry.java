@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,7 +95,7 @@ public class Entry {
 			break;
 		}
 
-		QueueManager queueManager = new QueueManager();
+		QueueManager queueManager = new QueueManager().withCorePoolSize(mgr.getNumberOfThreads());
 
 		processor.setQueueManager(queueManager);
 
@@ -148,6 +149,8 @@ public class Entry {
 		private BufferedReader file;
 
 		private DataType datatype;
+
+		private int threadCount;
 
 		private String getFilename() {
 			return this.filename;
@@ -213,6 +216,14 @@ public class Entry {
 			setDataType(fileParts[fileParts.length - 1]);
 		}
 
+		public int getNumberOfThreads() {
+			return this.threadCount;
+		}
+
+		private void setNumberOfThreads(int threads) {
+			this.threadCount = threads;
+		}
+
 		private void readArgs(final String[] args) {
 			if (args.length == 0) {
 				printHelpAndExit();
@@ -229,6 +240,9 @@ public class Entry {
 					break;
 				case "-t":
 					setDataType(tmpVal);
+					break;
+				case "--threads":
+					setNumberOfThreads(NumberUtils.toInt(tmpVal, QueueManager.defaultCorePoolSize));
 					break;
 				case "-?":
 				case "-H":
@@ -278,6 +292,9 @@ public class Entry {
 							+ "]   => format of data to parse"
 							+ "\n\t\t\t If no type is provided, the extension of the file will be used."
 							+ "\n\t\t\t If no type can be determined from the extension, jar will exit."
+							+ "\n\n\t\t --threads [int]    => sets the number of threads"
+							+ "\n\t\t\t This defaults to '" + QueueManager.defaultCorePoolSize
+							+ "' and cannot be higher than '" + QueueManager.maximumCorePoolSize + "'"
 							+ "\n\n\t\t -h | -H | -?    => prints this help and exits"
 							+ "\n\n\t=================== EXIT STATUS ==================="
 							+ "\n\tThis jar will exit with the following statuses, depending on the case:"

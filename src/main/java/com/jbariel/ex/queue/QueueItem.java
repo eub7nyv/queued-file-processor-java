@@ -73,7 +73,8 @@ public class QueueItem {
 			@Override
 			public ExecutionResult call() throws Exception {
 				ExecutionResult res = ExecutionResult.STARTED;
-				log.info(Thread.currentThread().getName() + "\t" + getFileLineNumber() + "\t" + getFileLineAsString());
+				log.info(Thread.currentThread().getName() + "   \tLine: " + getFileLineNumber() + "\t"
+						+ getFileLineAsString());
 				res = ExecutionResult.ENDED;
 				// cleanup
 				res = ExecutionResult.SUCCESS;
